@@ -1,5 +1,5 @@
 const NV="2026-03-11";
-const DS={owners:"391534e1-09e6-8134-908a-000b92c0ac22",properties:"391534e1-09e6-8135-a9aa-000bc3e04f48",onboarding:"5bffa446-e078-4f36-92f5-5014e9f4bc34",reservations:"391534e1-09e6-814b-a6c9-000b0b27a41f",documents:"391534e1-09e6-81e8-a34b-000bed9cb32d"};
+const DS={owners:"391534e1-09e6-8134-908a-000b92c0ac22",properties:"391534e1-09e6-8135-a9aa-000bc3e04f48",onboarding:"5bffa446-e078-4f36-92f5-5014e9f4bc34",reservations:"391534e1-09e6-814b-a6c9-000b0b27a41f",documents:"391534e1-09e6-81e8-a34b-000bed9cb32d",tasks:"391534e1-09e6-81ec-86a4-000b89413a33",channels:"2c4f4e5d-35ff-43ee-89ac-666ed644c2f1",inventory:"4fa197a5-5f18-4b7b-8265-5761d0ad58d8"};
 const clean=(v,n=1900)=>String(Array.isArray(v)?v.join(", "):(v??"")).trim().slice(0,n);
 const list=v=>Array.isArray(v)?v:(v?[v]:[]);
 const number=v=>{const n=Number(String(v??"").replace(",",".").replace(/[^0-9.-]/g,""));return Number.isFinite(n)?n:null};
@@ -8,6 +8,9 @@ async function N(path,token,opt={}){const r=await fetch("https://api.notion.com/
 const create=(ds,t,properties)=>N("/pages",t,{method:"POST",body:JSON.stringify({parent:{type:"data_source_id",data_source_id:ds},properties})});
 const update=(id,t,properties)=>N("/pages/"+id,t,{method:"PATCH",body:JSON.stringify({properties})});
 const query=(ds,t,filter)=>N(`/data_sources/${ds}/query`,t,{method:"POST",body:JSON.stringify({filter,page_size:5})});
+const queryMany=(ds,t,filter)=>N(`/data_sources/${ds}/query`,t,{method:"POST",body:JSON.stringify({filter,page_size:100})});
+const pageTitle=(row,prop)=>clean(row?.properties?.[prop]?.title?.map(x=>x?.plain_text||x?.text?.content||"").join(""),500);
+const deadline=(base,daysBefore=0)=>{if(!base)return null;const d=new Date(String(base).slice(0,10)+"T12:00:00Z");if(Number.isNaN(d.getTime()))return null;d.setUTCDate(d.getUTCDate()-daysBefore);const today=new Date();today.setUTCHours(0,0,0,0);if(d<today)return today.toISOString().slice(0,10);return d.toISOString().slice(0,10)};
 async function owner(p,t){const email=clean(p.email,200);const q=email?await query(DS.owners,t,{property:"Email",email:{equals:email}}):{results:[]};const props={"Nom complet":P.title(p["Nom et prénom"]||"Propriétaire"),Email:P.email(email),"Téléphone":P.phone(p["Téléphone"]),Statut:P.select("🔵 En onboarding")};return q.results?.[0]?update(q.results[0].id,t,props):create(DS.owners,t,{...props,Source:P.select("Site web"),"Statut pipeline":P.select("🆕 Nouveau lead"),"Date premier contact":P.date(new Date().toISOString())})}
 async function property(p,ownerId,t){const address=clean(p["Adresse exacte du logement"],1000);const q=await query(DS.properties,t,{property:"Adresse complète",rich_text:{equals:address}});const props={"Nom du logement":P.title(address||p.Dossier||"Nouveau logement"),"Adresse complète":P.text(address),"Capacité voyageurs":P.number(p["Capacité voyageurs"]),Propriétaire:P.rel([ownerId]),Statut:P.select("🔵 En onboarding"),"WiFi SSID":P.text(p["Wi-Fi nom réseau"]),"WiFi Mot de passe":P.text(p["Wi-Fi mot de passe"]),"Code accès / Boîte à clé":P.text([p["Boîte à clés - emplacement"],p["Boîte à clés - code"]].filter(Boolean).join(" · "))};return q.results?.[0]?update(q.results[0].id,t,props):create(DS.properties,t,{...props,"Phase onboarding":P.select("01 · Accord")})}
 function notes(p){const pairs=[["Profil",p["Profil propriétaire"]],["Règles copropriété",p["Règles rapides"]],["Réservations futures",p["Réservations futures"]],["Calendrier 2027",p["Calendrier 2027"]],["Avant reprise",p["Avant reprise"]],["Blocages",p["Blocages calendrier hors plateformes"]],["Frais ménage",p["Frais ménage actuels €"]],["Check-in/out",[p["Check-in actuel"],p["Check-out actuel"]].filter(Boolean).join(" / ")],["Minimum séjour",[p["Min séjour hors saison"],p["Période hors saison"],p["Min séjour été"],p["Période été"],p["Min séjour événements"],p["Période événements"]].filter(Boolean).join(" · ")],["Annulation",p["Politique annulation"]],["Promotions",p["Promotions actives"]],["Optimisation",p["Souhait optimisation tarifaire"]],["Mode arrivée",p["Mode arrivée"]],["Ménage",p["Ménage actuel / organisation"]],["Contact urgence",p["Contact urgence"]],["Clientèles",p["Clientèles cibles"]],["Services à étudier",p["Upsells souhaités"]],["Priorité",p["Priorité propriétaire"]],["Direct",[p["Direct - origine"],p["Direct - suivi"]].filter(Boolean).join(" · ")],["Booking 2FA",[p["Booking - 2FA nom"],p["Booking - 2FA téléphone"],p["Booking - 2FA email"]].filter(Boolean).join(" · ")],["Airbnb 2FA",[p["Airbnb - 2FA nom"],p["Airbnb - 2FA téléphone"],p["Airbnb - 2FA email"]].filter(Boolean).join(" · ")],["Expedia",[p["Expedia - ID établissement"],p["Expedia - email / identifiant"]].filter(Boolean).join(" · ")],["Compléments",p["Informations complémentaires"]]];return pairs.filter(x=>clean(x[1])).map(x=>`${x[0]}: ${clean(x[1])}`).join("\n").slice(0,1900)}
@@ -15,10 +18,94 @@ async function onboarding(p,t){const ch=list(p["Canaux utilisés"]),x={"Dossier"
 const platform=c=>c==="Airbnb"?"Airbnb":c==="Booking.com"?"Booking":c==="Direct"?"Direct":null;
 const nights=(a,b)=>{const n=Math.round((new Date(`${b}T00:00:00Z`)-new Date(`${a}T00:00:00Z`))/864e5);return Number.isFinite(n)&&n>0?n:null};
 async function reservations(bs,ownerId,propertyId,t){const out=[];for(const b of bs.slice(0,50)){if(!b||(!b.arrival&&!b.departure&&!b.channel&&!b.guest))continue;const c=clean(b.channel,100),n=[!platform(c)&&c?`Canal: ${c}`:"",b.payment?`Paiement: ${clean(b.payment)}`:"",list(b.flags).length?`Points: ${list(b.flags).join(", ")}`:""].filter(Boolean).join(" · ");out.push(await create(DS.reservations,t,{Référence:P.title(clean(b.guest,300)||`${c||"Réservation"} · ${b.arrival||"date à confirmer"}`),"Date check-in":P.date(b.arrival),"Date check-out":P.date(b.departure),"Nb nuits":{number:nights(b.arrival,b.departure)},"Nb voyageurs":P.number(b.guests),Voyageur:P.text(b.guest),"Montant hébergement (€)":P.number(b.amount),Plateforme:P.select(platform(c)),Statut:P.select("🟡 À venir"),Notes:P.text(n),Logement:P.rel([propertyId]),Propriétaire:P.rel([ownerId])}))}return out}
+
+async function ensureTasks(p,ownerId,propertyId,t){
+  const ch=list(p["Canaux utilisés"]),takeover=clean(p["Date de prise en main prévue"],30);
+  const defs=[
+    ["Vérifier pack contractuel et pièces obligatoires","02 · Contrat","🔴 Urgente",true,"Administratif",18,"Contrat, identité, assurance, déclaration/enregistrement et contraintes utiles validés avant configuration."],
+    ["Planifier rendez-vous état zéro du logement","03 · État zéro","🔴 Urgente",true,"Administratif",14,"Organiser le passage sur place : accès, technique, inventaire, linge, consommables, urgences et état initial."],
+    ["Réaliser état zéro photo / technique / inventaire","03 · État zéro","🔴 Urgente",true,"Maintenance",12,"Photographier l’état initial, tester les accès et équipements sensibles, relever les anomalies avant exploitation."],
+    ["Contrôler réservations futures et blocages calendrier","03 · État zéro","🔴 Urgente",true,"Administratif",12,"Vérifier toutes les réservations et tous les blocages avant toute connexion ou modification des canaux."],
+    ...(ch.includes("Airbnb")?[["Faire snapshot complet Airbnb avant modification","04 · Accès OTA","🔴 Urgente",true,"Administratif",11,"Capturer calendrier, réservations, tarifs, promotions, minimum stay, annulation, ménage, photos, textes, messages et versements visibles."]]:[]),
+    ...(ch.includes("Booking.com")?[["Faire snapshot complet Booking avant modification","04 · Accès OTA","🔴 Urgente",true,"Administratif",11,"Capturer calendrier, réservations, tarifs, promotions, restrictions, politiques, ménage, photos, textes, messages et versements visibles."]]:[]),
+    ...((ch.includes("Leboncoin")||ch.includes("Direct"))?[["Contrôler état zéro des canaux hors OTA","04 · Accès OTA","🔴 Urgente",true,"Administratif",11,"Reprendre réservations, blocages, conditions et mode opératoire des canaux directs / Leboncoin avant synchronisation."]]:[]),
+    ["Récupérer et tester les accès délégués aux canaux","04 · Accès OTA","🔴 Urgente",true,"Administratif",10,"Privilégier co-hôte / accès nominatif. Tester 2FA et droits utiles sans stocker de secret maître dans Notion."],
+    ["Configurer le logement dans PMS / Noé canal par canal","05 · PMS / Noé","🔴 Urgente",true,"Administratif",8,"Créer le bien puis connecter un canal à la fois après état zéro validé."],
+    ["Contrôler synchronisation calendrier / réservations / tarifs","05 · PMS / Noé","🔴 Urgente",true,"Administratif",7,"Comparer PMS et chaque canal après connexion avant d’ajouter le canal suivant."],
+    ["Valider prestataire ménage, linge et consommables","06 · Ménage","🔴 Urgente",true,"Ménage",7,"Valider organisation, forfait, linge, consommables, week-ends, preuves photo et procédure anomalies."],
+    ["Effectuer rotation test ménage + photos","06 · Ménage","🔴 Urgente",true,"Ménage",5,"Chronométrer une rotation complète et valider checklist, photos, réassort et statut Prêt."],
+    ["Paramétrer pricing, minimum stay et promotions","07 · Optimisation","🟡 Normale",true,"Administratif",5,"Appliquer la stratégie validée avec le propriétaire sans écraser l’état zéro de référence."],
+    ["Configurer messages voyageurs","07 · Optimisation","🟡 Normale",true,"Administratif",4,"Préparer confirmation, pré-arrivée, check-in, séjour, départ, avis et gestion des incidents."],
+    ["Optimiser annonces et galerie OTA","07 · Optimisation","🟡 Normale",false,"Autre",3,"Contrôler titres, textes, équipements, règles et visuels fidèles au logement."],
+    ["Effectuer test complet réservation → ménage → arrivée","08 · Tests","🔴 Urgente",true,"Autre",2,"Tester le flux de bout en bout avant ouverture opérationnelle."],
+    ["Contrôle final / freeze avant GO LIVE","09 · LIVE","🔴 Urgente",true,"Administratif",1,"Aucun gros changement ensuite : contrôler réservations, accès, ménage, clés, messages et urgences."],
+    ["GO LIVE interne Casa Perpi","09 · LIVE","🔴 Urgente",true,"Administratif",0,"Valider que le logement peut fonctionner sans dépendance opérationnelle au propriétaire."]
+  ];
+  const q=await queryMany(DS.tasks,t,{property:"Logement",relation:{contains:propertyId}});
+  const existing=new Set((q.results||[]).map(r=>pageTitle(r,"Tâche")).filter(Boolean));
+  const missing=defs.filter(d=>!existing.has(d[0]));
+  return Promise.all(missing.map(d=>create(DS.tasks,t,{
+    "Tâche":P.title(d[0]),"Phase onboarding":P.select(d[1]),"Statut":P.select("À faire"),"Priorité":P.select(d[2]),
+    "Bloquant GO LIVE":P.check(d[3]),"Type":P.select(d[4]),"Date échéance":P.date(deadline(takeover,d[5])),
+    "Logement":P.rel([propertyId]),"Propriétaire":P.rel([ownerId]),"Notes":P.text(d[6])
+  })));
+}
+const channelInfo=(p,c)=>{
+  if(c==="Booking.com")return {platform:"Booking.com",id:p["Booking - ID établissement"],email:p["Booking - email / identifiant"],two:[p["Booking - 2FA nom"],p["Booking - 2FA téléphone"],p["Booking - 2FA email"]].filter(Boolean).join(" · "),payment:p["Booking - paiements / versements"]};
+  if(c==="Airbnb")return {platform:"Airbnb",id:p["Airbnb - ID annonce"],email:p["Airbnb - email compte"],two:[p["Airbnb - 2FA nom"],p["Airbnb - 2FA téléphone"],p["Airbnb - 2FA email"]].filter(Boolean).join(" · ")};
+  if(c==="Leboncoin")return {platform:"Leboncoin",id:p["Leboncoin - ID / URL annonce"],email:p["Leboncoin - email compte"]};
+  if(c==="Direct")return {platform:"Direct",notes:[p["Direct - origine"],p["Direct - suivi"]].filter(Boolean).join(" · ")};
+  if(c==="Expedia")return {platform:"Autre",id:p["Expedia - ID établissement"],email:p["Expedia - email / identifiant"],notes:"Expedia"};
+  return {platform:"Autre",notes:c};
+};
+async function ensureChannels(p,t){
+  const address=clean(p["Adresse exacte du logement"],1000),ownerName=clean(p["Nom et prénom"],300)||"Propriétaire";
+  const raw=[...list(p["Canaux utilisés"])];
+  if((clean(p["Expedia - ID établissement"])||clean(p["Expedia - email / identifiant"]))&&!raw.includes("Expedia"))raw.push("Expedia");
+  const channels=[...new Set(raw.filter(Boolean))];
+  const q=await queryMany(DS.channels,t,{property:"Logement",rich_text:{equals:address}});
+  const byTitle=new Map((q.results||[]).map(r=>[pageTitle(r,"Canal / compte"),r]));
+  return Promise.all(channels.map(c=>{
+    const i=channelInfo(p,c),label=c==="Booking.com"?"Booking.com":c,title=`${ownerName} · ${label}`;
+    const props={"Canal / compte":P.title(title),Plateforme:P.select(i.platform),"Logement":P.text(address),"ID établissement / annonce":P.text(i.id),"Email / identifiant":P.text(i.email),"2FA - destinataire":P.text(i.two),"Mode de paiement":P.text(i.payment),Notes:P.text(i.notes),"Statut accès":P.select("À récupérer"),"2FA testée":P.check(false),"État zéro capturé":P.check(false),"Réservations contrôlées":P.check(false)};
+    const row=byTitle.get(title);return row?update(row.id,t,props):create(DS.channels,t,props);
+  }));
+}
+async function ensureInventory(p,t){
+  const address=clean(p["Adresse exacte du logement"],1000);
+  const defs=[
+    ["Jeu de clés Casa Perpi","Clé / accès",p["Nombre jeux de clés"],"",p["Entrée immeuble"]],
+    ["Badge / Vigik","Clé / accès",null,p["Badge / Vigik"],""],
+    ["Boîte à clés","Clé / accès",null,p["Boîte à clés - emplacement"],"Code volontairement non recopié dans l’inventaire."],
+    ["Wi-Fi","Équipement",null,"",clean(p["Wi-Fi nom réseau"])?`SSID : ${clean(p["Wi-Fi nom réseau"],300)} — mot de passe conservé uniquement dans la fiche onboarding.`:""],
+    ["Climatisation","Technique",null,"",p.Climatisation],
+    ["Eau chaude","Technique",null,p["Eau chaude"],""],
+    ["Tableau électrique","Technique",null,p["Tableau électrique"],""],
+    ["Coupure d’eau","Technique",null,p["Coupure eau"],""],
+    ["Linge disponible","Linge",null,"",p["Linge disponible"]],
+    ["Stock consommables","Consommable",null,"",p["Consommables présents"]],
+    ["Défauts connus","Défaut",null,"",p["Fragilités / défauts"]]
+  ];
+  const q=await queryMany(DS.inventory,t,{property:"Logement",rich_text:{equals:address}});
+  const byTitle=new Map((q.results||[]).map(r=>[pageTitle(r,"Élément"),r]));
+  return Promise.all(defs.map(d=>{
+    const props={"Élément":P.title(d[0]),Catégorie:P.select(d[1]),Quantité:P.number(d[2]),Emplacement:P.text(d[3]),Logement:P.text(address),Notes:P.text(d[4]),"État":P.select("À surveiller"),Testé:P.check(false),"Photo réalisée":P.check(false)};
+    const row=byTitle.get(d[0]);return row?update(row.id,t,props):create(DS.inventory,t,props);
+  }));
+}
+
 async function upload(pdf,t){if(!pdf?.base64||!pdf?.name)return null;const buf=Buffer.from(pdf.base64,"base64");if(!buf.length||buf.length>3e6){const e=new Error("pdf_too_large");e.status=413;throw e}const u=await N("/file_uploads",t,{method:"POST",body:JSON.stringify({mode:"single_part",filename:clean(pdf.name,500)||"Casa_Perpi_Onboarding.pdf",content_type:"application/pdf"})});const fd=new FormData();fd.append("file",new Blob([buf],{type:"application/pdf"}),clean(pdf.name,500));await N(`/file_uploads/${u.id}/send`,t,{method:"POST",body:fd});return u.id}
 async function documentRow(p,ownerId,propertyId,fileId,t){const props={Document:P.title(`Onboarding propriétaire — ${clean(p["Nom et prénom"],300)||"Propriétaire"} — ${new Date().toISOString().slice(0,10)}`),Propriétaire:P.rel([ownerId]),Logement:P.rel([propertyId]),Notes:P.text("Dossier d’onboarding transmis via le formulaire Casa Perpi et archivé automatiquement."),"À compléter":P.check(false)};if(fileId)props.Fichier={files:[{type:"file_upload",file_upload:{id:fileId},name:"Dossier onboarding Casa Perpi.pdf"}]};return create(DS.documents,t,props)}
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
 async function mail(key,body){const r=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:`Bearer ${key}`,"Content-Type":"application/json"},body:JSON.stringify(body)});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.message||`Resend ${r.status}`);return d}
 async function emails(p,pdf,doc,key){const name=clean(p["Nom et prénom"],300)||"Propriétaire",address=clean(p["Adresse exacte du logement"],500)||"Logement",email=clean(p.email,200),url=doc?.url||"";await mail(key,{from:"Casa Perpi <onboarding@casaperpi.com>",to:["contact@casaperpi.com"],reply_to:email||undefined,subject:`Nouvel onboarding — ${name} — ${address}`,html:`<div style="font-family:Arial,Helvetica,sans-serif;color:#171714;line-height:1.55"><h2>Nouvel onboarding reçu</h2><p><strong>${esc(name)}</strong><br>${esc(address)}<br>${esc(email)} · ${esc(p["Téléphone"]||"")}</p>${url?`<p><a href="${esc(url)}">Ouvrir le dossier archivé dans Notion</a></p>`:""}</div>`});if(email)await mail(key,{from:"Casa Perpi <onboarding@casaperpi.com>",to:[email],reply_to:"contact@casaperpi.com",subject:"Casa Perpi — votre dossier propriétaire a bien été reçu",html:`<div style="font-family:Arial,Helvetica,sans-serif;color:#171714;line-height:1.6"><p>Bonjour ${esc(name)},</p><p>Votre dossier pour <strong>${esc(address)}</strong> a bien été reçu par Casa Perpi.</p><p>Nous allons vérifier les informations utiles à la reprise du logement et reviendrons vers vous si une précision manque.</p><p>Votre copie PDF est jointe à cet e-mail.</p><p>À bientôt,<br><strong>Casa Perpi</strong></p></div>`,attachments:pdf?.base64?[{filename:clean(pdf.name,500),content:pdf.base64,content_type:"application/pdf"}]:undefined})}
 function reply(res,status,body){res.setHeader("Cache-Control","no-store");return res.status(status).json(body)}
-export default async function handler(req,res){res.setHeader("Access-Control-Allow-Origin","*");res.setHeader("Access-Control-Allow-Methods","POST,OPTIONS");res.setHeader("Access-Control-Allow-Headers","Content-Type");if(req.method==="OPTIONS")return res.status(204).end();if(req.method!=="POST")return reply(res,405,{ok:false,error:"method_not_allowed"});const nt=process.env.NOTION_TOKEN,rk=process.env.RESEND_API_KEY;if(!nt||!rk)return reply(res,500,{ok:false,error:"integration_not_configured"});try{const {payload:p={},bookings=[],pdf=null,honey=""}=req.body||{};if(clean(honey))return reply(res,200,{ok:true});if([p["Nom et prénom"],p["Téléphone"],p.email,p["Adresse exacte du logement"]].some(v=>!clean(v)))return reply(res,400,{ok:false,error:"missing_required_fields"});if(!/^\S+@\S+\.\S+$/.test(clean(p.email,200)))return reply(res,400,{ok:false,error:"invalid_email"});const o=await owner(p,nt),l=await property(p,o.id,nt),on=await onboarding(p,nt),rs=await reservations(Array.isArray(bookings)?bookings:[],o.id,l.id,nt),fid=await upload(pdf,nt),d=await documentRow(p,o.id,l.id,fid,nt);await emails(p,pdf,d,rk);return reply(res,200,{ok:true,ownerId:o.id,propertyId:l.id,onboardingId:on.id,reservationsCreated:rs.length,reservationIds:rs.map(r=>r.id),documentId:d.id})}catch(e){console.error("Casa Perpi onboarding",{message:e?.message,status:e?.status,payload:e?.payload});return reply(res,e?.status===413?413:500,{ok:false,error:e?.message==="pdf_too_large"?"pdf_too_large":"onboarding_failed"})}}
+export default async function handler(req,res){res.setHeader("Access-Control-Allow-Origin","*");res.setHeader("Access-Control-Allow-Methods","POST,OPTIONS");res.setHeader("Access-Control-Allow-Headers","Content-Type");if(req.method==="OPTIONS")return res.status(204).end();if(req.method!=="POST")return reply(res,405,{ok:false,error:"method_not_allowed"});const nt=process.env.NOTION_TOKEN,rk=process.env.RESEND_API_KEY;if(!nt||!rk)return reply(res,500,{ok:false,error:"integration_not_configured"});try{const {payload:p={},bookings=[],pdf=null,honey=""}=req.body||{};if(clean(honey))return reply(res,200,{ok:true});if([p["Nom et prénom"],p["Téléphone"],p.email,p["Adresse exacte du logement"]].some(v=>!clean(v)))return reply(res,400,{ok:false,error:"missing_required_fields"});if(!/^\S+@\S+\.\S+$/.test(clean(p.email,200)))return reply(res,400,{ok:false,error:"invalid_email"});const o=await owner(p,nt),l=await property(p,o.id,nt),on=await onboarding(p,nt);
+const [rs,ts,cs,is]=await Promise.all([
+  reservations(Array.isArray(bookings)?bookings:[],o.id,l.id,nt),
+  ensureTasks(p,o.id,l.id,nt),
+  ensureChannels(p,nt),
+  ensureInventory(p,nt)
+]);
+const fid=await upload(pdf,nt),d=await documentRow(p,o.id,l.id,fid,nt);await emails(p,pdf,d,rk);
+return reply(res,200,{ok:true,ownerId:o.id,propertyId:l.id,onboardingId:on.id,reservationsCreated:rs.length,reservationIds:rs.map(r=>r.id),tasksCreated:ts.length,taskIds:ts.map(r=>r.id),channelsSynced:cs.length,channelIds:cs.map(r=>r.id),inventorySynced:is.length,inventoryIds:is.map(r=>r.id),documentId:d.id})}catch(e){console.error("Casa Perpi onboarding",{message:e?.message,status:e?.status,payload:e?.payload});return reply(res,e?.status===413?413:500,{ok:false,error:e?.message==="pdf_too_large"?"pdf_too_large":"onboarding_failed"})}}
