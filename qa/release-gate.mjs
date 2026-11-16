@@ -22,7 +22,7 @@ check('contact-path', links.some(x => /^mailto:contact@casaperpi\.com/i.test(x))
 check('no-placeholder-photos', !/images\.unsplash\.com|source\.unsplash\.com|picsum\.photos|placehold\.co/i.test(html), 'Unapproved placeholder photography detected');
 check('legal-page', links.some(x => /mentions-legales|legal-notice/i.test(x)), 'Legal notice page must be linked');
 check('privacy-page', links.some(x => /confidentialite|privacy-policy/i.test(x)), 'Privacy page must be linked');
-check('loader-concept', /\b(data-loader|id=["'](?:loader|preloader)|class=["'][^"']*(?:preloader|loader))\b/i.test(html), 'No named loading experience detected; manual review still required');
+check('loader-concept', /id=["']intro["']/.test(html) && /class=["']intro-skip["']/.test(html), 'Missing skippable intro experience');
 check('non-onepage-information-architecture', links.some(x => /^\/(?!\/|#)/.test(x) && !/^\/\/?$/.test(x)), 'No secondary page route found');
 check('reduced-motion', /prefers-reduced-motion/.test(html), 'No reduced-motion handling');
 check('mobile-viewport', /name=["']viewport["']/.test(html), 'Viewport metadata missing');
