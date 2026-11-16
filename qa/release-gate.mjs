@@ -20,7 +20,7 @@ const ids = new Set([...html.matchAll(/\bid=["']([^"']+)["']/gi)].map(x => x[1])
 const anchors = links.filter(x => x.startsWith('#'));
 const broken = anchors.filter(x => x.length > 1 && !ids.has(x.slice(1)));
 check('internal-anchor-integrity', broken.length === 0, broken.join(', ') || 'Internal anchors exist');
-check('contact-path', links.some(x => /^mailto:contact@casaperpi\.com/i.test(x)) || /<form\b/i.test(html), 'Working contact route exists at minimum');
+check('contact-path', (/mailto:contact@casaperpi\\.com/i.test(contact) || /<form\\b/i.test(contact)) && links.includes('/contact/'), 'Contact route missing or has no contact method');
 check('no-placeholder-photos', !/images\.unsplash\.com|source\.unsplash\.com|picsum\.photos|placehold\.co/i.test(html), 'Unapproved placeholder photography detected');
 check('legal-page', links.some(x => /mentions-legales|legal-notice/i.test(x)), 'Legal notice page must be linked');
 check('privacy-page', links.some(x => /confidentialite|privacy-policy/i.test(x)), 'Privacy page must be linked');
