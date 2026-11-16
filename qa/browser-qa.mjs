@@ -25,13 +25,15 @@ for (const { name, width, height } of [
     const response = await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 25000 });
     assert(response?.ok(), 'HTTP ' + response?.status());
   });
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForTimeout(2400);
   await page.screenshot({ path: 'qa/artifacts/' + name + '.png', fullPage: true, animations: 'disabled' });
   await check(name + ': no horizontal overflow', async () => {
     const { scrollWidth, innerWidth } = await page.evaluate(() => ({scrollWidth: document.documentElement.scrollWidth,innerWidth:window.innerWidth}));
     assert(scrollWidth <= innerWidth + 1, 'scrollWidth=' + scrollWidth + ' viewport=' + innerWidth);
   });
   await check(name + ': primary contact leads somewhere', async () => {
-    const cta = page.locator('.hero a[href^="mailto:contact@casaperpi.com"]').first();
+    const cta = page.locator('a.hero-cta[href="/contact/"]').first();
     assert((await cta.count()) > 0, 'no contact CTA');
     assert(await cta.isVisible(), 'contact CTA not visible');
   });
@@ -41,7 +43,7 @@ for (const { name, width, height } of [
   if (name === 'mobile') {
     await check('mobile: menu opens and closes', async () => {
       const button = page.locator('.menu-button');
-      assert(await button.isVisible(), 'menu button hidden');
+      assert(await button.isVisible(), 'menu button hidden; css=' + await button.evaluate(el=>getComputedStyle(el).display));
       await button.click();
       assert.equal(await button.getAttribute('aria-expanded'), 'true');
       await page.locator('#site-navigation a[href="#services"]').click();
