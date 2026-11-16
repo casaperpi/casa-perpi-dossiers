@@ -1,0 +1,36 @@
+name: Casa Perpi Browser QA
+on:
+  push:
+    branches: [feat/casaperpi-premium-web]
+    paths: ['web/**', 'qa/**', '.github/workflows/casaperpi-browser-qa.yml']
+  pull_request:
+    paths: ['web/**', 'qa/**', '.github/workflows/casaperpi-browser-qa.yml']
+jobs:
+  browser-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install browser test runtime
+        run: npm install --no-save playwright@1.56.1
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run browser checks against local preview
+        env:
+          TARGET_URL: http://127.0.0.1:4173
+        run: |
+          python3 -m http.server 4173 --directory web > /tmp/casaperpi-server.log 2>&1 &
+          sleep 2
+          node qa/browser-qa.mjs
+      - name: Upload screenshot evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: casaperpi-browser-screenshots
+          path: qa/artifacts/
+          if-no-files-found: ignore
