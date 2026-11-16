@@ -31,7 +31,7 @@ for (const { name, width, height } of [
     assert(scrollWidth <= innerWidth + 1, 'scrollWidth=' + scrollWidth + ' viewport=' + innerWidth);
   });
   await check(name + ': primary contact leads somewhere', async () => {
-    const cta = page.locator('a[href^="mailto:contact@casaperpi.com"], a[href*="/contact"]').first();
+    const cta = page.locator('.hero a[href^="mailto:contact@casaperpi.com"]').first();
     assert((await cta.count()) > 0, 'no contact CTA');
     assert(await cta.isVisible(), 'contact CTA not visible');
   });
