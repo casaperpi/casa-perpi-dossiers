@@ -1,0 +1,23 @@
+name: Independent static release gate
+on:
+  push:
+    branches:
+      - feat/casaperpi-premium-web
+  pull_request:
+    paths:
+      - 'web/**'
+      - 'qa/**'
+      - '.github/workflows/casaperpi-release-gate.yml'
+jobs:
+  static-release-gate:
+    name: Static QA (not creative approval)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run independent static gate
+        run: node qa/release-gate.mjs
